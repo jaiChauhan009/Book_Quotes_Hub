@@ -50,44 +50,43 @@ import com.example.book_quotes_hub.db.Quote
 import com.example.book_quotes_hub.model.QuoteItem
 import com.example.book_quotes_hub.utils.NetworkUtils
 import com.example.bookhub.viewmodel.QuoteViewModel
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FabPosition
+import androidx.compose.runtime.collectAsState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuoteListScreen(
-    navController: NavController, // Use hiltViewModel for injection
-    onQuoteClick: (String) -> Unit
+    navController: NavController,
+    onCategoryClick: (String?) -> Unit // New callback for category click
 ) {
     val quoteViewModel: QuoteViewModel = hiltViewModel()
-    val quotes by quoteViewModel.quotes.collectAsState()
     val isLoading by quoteViewModel.isLoading.collectAsState()
     val errorMessage by quoteViewModel.errorMessage.collectAsState()
-    val selectedCategory by quoteViewModel.selectedCategory.collectAsState()
-
-    val listState = rememberLazyGridState() // Use rememberLazyGridState for LazyVerticalGrid
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-            // Trigger load more when user scrolls to within 10 items of the end
-            // (considering a 5-column grid, this is roughly 2 rows from the end)
-            lastVisibleItemIndex != null && lastVisibleItemIndex >= quotes.size - (5 * 2) && !isLoading
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore) {
-            quoteViewModel.loadNextPage()
-        }
-    }
 
     val categories = listOf("All Quotes", "Motivation", "Courage", "Nature", "Love")
     val context = LocalContext.current
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Daily Quotes") })
+            TopAppBar(
+                title = { Text("Daily Quotes Categories") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                )
+            )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { quoteViewModel.refreshQuotes() }) {
+            FloatingActionButton(onClick = {
+                // Refresh all quotes in the ViewModel, though it might not be immediately visible here
+                // It will affect the next CategoryQuotesScreen loaded.
+                quoteViewModel.refreshQuotes()
+            }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh quotes")
             }
         },
@@ -96,12 +95,12 @@ fun QuoteListScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues) // Apply scaffold padding
+                .padding(paddingValues)
         ) {
             // Network Status Indicator
             val isOnline = NetworkUtils.isInternetAvailable(context)
             Text(
-                text = if (isOnline) "Online. Fetching new random quotes." else "No internet. Loading from cache/offline.",
+                text = if (isOnline) "Online. Select a category." else "No internet. Categories available.",
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -109,40 +108,7 @@ fun QuoteListScreen(
                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
 
-            // Category Selection Row
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                items(categories) { category ->
-                    val isSelected = when (category) {
-                        "All Quotes" -> selectedCategory == null
-                        else -> selectedCategory == category
-                    }
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            val newCategory = if (category == "All Quotes") null else category
-                            quoteViewModel.selectCategory(newCategory)
-                        },
-                        label = { Text(category) },
-                        colors = FilterChipDefaults.filterChipColors( // <--- CORRECTED HERE
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    )
-                }
-            }
-
-            // Initial loading indicator (when list is empty)
-            if (isLoading && quotes.isEmpty()) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-
-            // Error message display
+            // Error message display (if any general error occurred during category refresh or initial load)
             errorMessage?.let { message ->
                 Text(
                     text = message,
@@ -151,44 +117,30 @@ fun QuoteListScreen(
                 )
             }
 
-            // Empty state message
-            if (quotes.isEmpty() && !isLoading) {
+            // Display categories in a grid
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2), // Two-column grid for categories
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(16.dp)
+            ) {
+                items(categories) { category ->
+                    CategoryCard(category = category) {
+                        val selectedCategory = if (category == "All Quotes") null else category
+                        onCategoryClick(selectedCategory)
+                    }
+                }
+            }
+
+            // Optional: Loading indicator for initial data fetch (if categories also depend on network)
+            if (isLoading) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        "No quotes available for ${selectedCategory ?: "All Quotes"}. Tap 'Refresh' to fetch some.",
-                        modifier = Modifier.padding(16.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(5), // Five-column grid as requested
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    itemsIndexed(quotes, key = { _, quote -> quote.localId }) { index, quote -> // THIS IS THE FIX!
-                        QuoteCard(quote = quote) {
-                            onQuoteClick(quote.id.toString()) // Pass the quote ID (Int) as a String
-                        }
-                    }
-                    // Loading indicator at the bottom of the list
-                    if (isLoading && quotes.isNotEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                            }
-                        }
-                    }
+                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
                 }
             }
         }
@@ -196,37 +148,33 @@ fun QuoteListScreen(
 }
 
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuoteCard(quote: QuoteItem, onClick: (QuoteItem) -> Unit) { // Use QuoteItem here
+fun CategoryCard(category: String, onClick: (String) -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick(quote) },
-        elevation = CardDefaults.cardElevation(2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            .height(120.dp) // Fixed height for category cards
+            .clickable { onClick(category) },
+        elevation = CardDefaults.cardElevation(4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp), // Slightly more compact for 5-column grid
-            horizontalAlignment = Alignment.CenterHorizontally
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "\"${quote.content}\"", // QuoteItem's content
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Normal,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center // Center text in grid card
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "- ${quote.author}",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center, // Center author in grid card
-                modifier = Modifier.fillMaxWidth()
+                text = category,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(8.dp)
             )
         }
     }
 }
+
+
 

@@ -41,9 +41,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.example.book_quotes_hub.view.quote.CategoryQuotesScreen
 import com.example.book_quotes_hub.view.quote.QuoteListScreen
 
 // import com.example.bookhub.MainActivity // Not directly needed in navigation composables
+
+
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -100,25 +103,13 @@ fun MainScreen(rootNavController: NavController) {
     }
 }
 
-// BookNavHost - No changes needed here based on previous discussion, but including for completeness
 @Composable
 fun BookNavHost(rootNavController: NavController) {
     val bookNavController = rememberNavController()
-    // No explicit viewModel passed to BookListScreen/BookDetailsScreen here
-    // as they should obtain it via hiltViewModel() internally if they are HiltViewModels.
-    // If MainViewModel is NOT a HiltViewModel, then passing it like this might be correct.
-    // Assuming BookListScreen/BookDetailsScreen internally use hiltViewModel() for MainViewModel.
-    // If not, and MainViewModel is a regular ViewModel, then it needs to be provided.
-    // For consistency with QuoteViewModel, assuming MainViewModel also uses hiltViewModel() internally.
 
     NavHost(bookNavController, startDestination = BookScreens.List.route) {
         composable(BookScreens.List.route) {
-            // If BookListScreen takes viewModel: MainViewModel = hiltViewModel(),
-            // then remove the 'viewModel = bookViewModel' here.
-            // If BookListScreen does NOT take hiltViewModel() internally,
-            // and MainViewModel is NOT a HiltViewModel, then this is correct.
-            // Assuming it behaves like QuoteScreen, so:
-            val bookViewModel: MainViewModel = hiltViewModel() // Get it once here for BookNavHost scope
+            val bookViewModel: MainViewModel = hiltViewModel()
             BookListScreen(viewModel = bookViewModel, onBookClick = { isbnNo ->
                 bookNavController.navigate(BookScreens.Details.createRoute(isbnNo))
             })
@@ -129,36 +120,56 @@ fun BookNavHost(rootNavController: NavController) {
         ) { backStackEntry ->
             val isbnNo = backStackEntry.arguments?.getString(EndPoints.ISBN_NO)
                 ?: throw IllegalStateException("'Book ISBN No' shouldn't be null")
-            // Same assumption for BookDetailsScreen
-            val bookViewModel: MainViewModel = hiltViewModel() // Get it again for this composable's scope
+            val bookViewModel: MainViewModel = hiltViewModel()
             BookDetailsScreen(viewModel = bookViewModel, isbnNo = isbnNo, onBackClick = { bookNavController.popBackStack() })
         }
     }
 }
 
-// QuoteNavHost - CORRECTED
+// QuoteNavHost - CORRECTED with CategoryQuotesScreen
 @Composable
 fun QuoteNavHost(rootNavController: NavController) {
     val quoteNavController = rememberNavController()
 
     NavHost(quoteNavController, startDestination = QuoteScreens.List.route) {
+        // Route for the main categories list screen
         composable(QuoteScreens.List.route) {
             QuoteListScreen(
-                navController = quoteNavController, // Pass navController as it's a required parameter
-                onQuoteClick = { quoteId ->
-                    quoteNavController.navigate(QuoteScreens.Details.createRoute(quoteId.toString()))
+                navController = quoteNavController, // Pass navController
+                onCategoryClick = { category -> // Use onCategoryClick now
+                    quoteNavController.navigate(QuoteScreens.CategoryQuotes.createRoute(category))
                 }
             )
         }
+
+        // Route for displaying quotes within a specific category
+        composable(
+            route = QuoteScreens.CategoryQuotes.route,
+            arguments = listOf(navArgument(EndPoints.CATEGORY) { type = NavType.StringType; nullable = true })
+        ) { backStackEntry ->
+            val category = backStackEntry.arguments?.getString(EndPoints.CATEGORY)
+            // If "All Quotes" was passed as a string, convert it back to null for the ViewModel
+            val actualCategory = if (category == "All Quotes") null else category
+
+            CategoryQuotesScreen(
+                navController = quoteNavController,
+                category = actualCategory,
+                onQuoteClick = { quoteId ->
+                    quoteNavController.navigate(QuoteScreens.Details.createRoute(quoteId))
+                }
+            )
+        }
+
+        // Route for displaying details of a single quote
         composable(
             QuoteScreens.Details.route,
-            arguments = listOf(navArgument(EndPoints.QUOTE_ID) { type = NavType.IntType })
+            arguments = listOf(navArgument(EndPoints.QUOTE_ID) { type = NavType.StringType }) // Changed to StringType
         ) { backStackEntry ->
-            val quoteId = backStackEntry.arguments?.getInt(EndPoints.QUOTE_ID)
+            val quoteId = backStackEntry.arguments?.getString(EndPoints.QUOTE_ID)
                 ?: throw IllegalStateException("'Quote ID' shouldn't be null")
             QuoteDetailScreen(
                 navController = quoteNavController,
-                quoteId = quoteId.toString() // Correctly convert Int from navArgument to String for QuoteDetailScreen
+                quoteId = quoteId // Pass as String
             )
         }
     }

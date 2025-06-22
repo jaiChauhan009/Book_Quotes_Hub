@@ -22,9 +22,12 @@ sealed class BookScreens(val route: String) {
 
 // --- Nested Screens for Quote Flow ---
 sealed class QuoteScreens(val route: String) {
-    object List : QuoteScreens("quote_list")
+    object List : QuoteScreens("quote_categories_list") // Renamed from "quote_list" to be more explicit for categories
+    object CategoryQuotes : QuoteScreens("category_quotes_list/{category}") { // New screen for quotes within a category
+        fun createRoute(category: String?) = "category_quotes_list/${category ?: "All Quotes"}"
+    }
     object Details : QuoteScreens("quote_details/{quoteId}") {
-        fun createRoute(quoteId: String) = "quote_details/$quoteId" // Changed to String
+        fun createRoute(quoteId: String) = "quote_details/$quoteId"
     }
 }
 
@@ -32,6 +35,7 @@ sealed class QuoteScreens(val route: String) {
 object EndPoints {
     const val ISBN_NO = "isbnNo"
     const val QUOTE_ID = "quoteId"
+    const val CATEGORY = "category" // New argument key for category
 }
 
 
